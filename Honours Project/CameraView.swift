@@ -13,6 +13,7 @@ import SwiftUI
 
 struct CameraView: View {
     @StateObject private var model = DataModel()
+    @State private var showSheet = false
     
     var body: some View {
         ViewfinderView(image: $model.viewfinderImage)
@@ -26,11 +27,19 @@ struct CameraView: View {
             .task {
                 await model.camera.start()
             }
+            .sheet(isPresented: $showSheet, onDismiss: {
+                model.camera.capturedImage = nil
+            }, content: {
+                ResultView(capture: model.camera.capturedImage)
+            })
     }
     
     private func cameraButtonView() -> some View {
         Button {
+            // capture photo and depth
             model.camera.takePhoto()
+            // show result sheet
+            showSheet = true
         } label: {
             Label {
                 Text("Take Photo")

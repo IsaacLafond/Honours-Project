@@ -22,6 +22,8 @@ class Camera: NSObject {
     private var videoOutput: AVCaptureVideoDataOutput?
     private var sessionQueue: DispatchQueue!
     
+    public var capturedImage: AVCapturePhoto?
+    
     private var allDepthCaptureDevices: [AVCaptureDevice] {
         AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInLiDARDepthCamera, .builtInDualWideCamera, .builtInDualCamera, .builtInTrueDepthCamera], mediaType: .video, position: .unspecified).devices
     }
@@ -34,7 +36,7 @@ class Camera: NSObject {
     
     private var captureDevice: AVCaptureDevice?
 
-    private var addToPhotoStream: ((AVCapturePhoto) -> Void)?
+//    private var addToPhotoStream: ((AVCapturePhoto) -> Void)?
     
     private var addToPreviewStream: ((CIImage) -> Void)?
     
@@ -50,13 +52,13 @@ class Camera: NSObject {
         }
     }()
     
-    lazy var photoStream: AsyncStream<AVCapturePhoto> = {
-        AsyncStream { continuation in
-            addToPhotoStream = { photo in
-                continuation.yield(photo)
-            }
-        }
-    }()
+//    lazy var photoStream: AsyncStream<AVCapturePhoto> = {
+//        AsyncStream { continuation in
+//            addToPhotoStream = { photo in
+//                continuation.yield(photo)
+//            }
+//        }
+//    }()
         
     override init() {
         super.init()
@@ -150,16 +152,6 @@ class Camera: NSObject {
         }
     }
     
-//    private func deviceInputFor(device: AVCaptureDevice?) -> AVCaptureDeviceInput? {
-//        guard let validDevice = device else { return nil }
-//        do {
-//            return try AVCaptureDeviceInput(device: validDevice)
-//        } catch let error {
-//            print("Error getting capture device input: \(error.localizedDescription)")
-//            return nil
-//        }
-//    }
-    
     func start() async {
         let authorized = await checkAuthorization()
         guard authorized else {
@@ -238,8 +230,51 @@ class Camera: NSObject {
                     photoOutputVideoConnection.videoOrientation = videoOrientation
                 }
             }
-            
+//            photoOutput.cap
             photoOutput.capturePhoto(with: photoSettings, delegate: self)
+            
+            
+//            print(self.photoStream)
+//            let photo = photoStream
+//            // Get image data file (jpeg, heic)
+//            guard let imageData = photo.fileDataRepresentation() else {
+//                print("failed to retrieve image file data")
+//                return
+//            }
+//            // Get image depth data
+//            guard let depthData = photo.depthData?.converting(toDepthDataType: kCVPixelFormatType_DepthFloat32) else {
+//                print("failed to get and convert depth data")
+//                return
+//            }
+//            // Get depth data to check if empty
+//            let depthDataMap = depthData.depthDataMap
+//            // Test if map is empty
+//            if CVPixelBufferGetWidth(depthDataMap) == 0 || CVPixelBufferGetHeight(depthDataMap) == 0 {
+//                print("0x0 empty depth data capture conditions failed to capture depth")
+//                return
+//            }
+//            // Convert depth data to point cloud list of points
+//            guard let pointCloud = convertDepthData(depthData: depthData) else {
+//                print("failed to convert depth data")
+//                return
+//            }
+//            // Prepare data for POST request
+//            let jsonDic: [String: Any] = [
+//                "image": imageData.base64EncodedString(),
+//                "depth-accuracy": depthData.depthDataAccuracy.rawValue,
+//                "depth-quality": depthData.depthDataQuality.rawValue,
+//                "point-cloud": pointCloud
+//            ]
+//            guard let jsonData = try? JSONSerialization.data(withJSONObject: jsonDic) else {
+//                print("failed to serialize json data")
+//                return
+//            }
+//            // Send capture data
+//            Task {
+//                print("Sending Capture...")
+//                await sendCapture(data: jsonData)
+//                print("Capture Sent!")
+//            }
         }
     }
 }
@@ -249,51 +284,12 @@ extension Camera: AVCapturePhotoCaptureDelegate {
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
         
         if let error = error {
-            print("Error capturing photo: \(error.localizedDescription)")
+            print("Error capturing photo: \(error.localizedDescription) \(error)")
             return
         }
         
-        addToPhotoStream?(photo)
-        
-        // Get image data file (jpeg, heic)
-        guard let imageData = photo.fileDataRepresentation() else {
-            print("failed to retrieve image file data")
-            return
-        }
-        // Get image depth data
-        guard let depthData = photo.depthData?.converting(toDepthDataType: kCVPixelFormatType_DepthFloat32) else {
-            print("failed to get and convert depth data")
-            return
-        }
-        // Get depth data to check if empty
-        let depthDataMap = depthData.depthDataMap
-        // Test if map is empty
-        if CVPixelBufferGetWidth(depthDataMap) == 0 || CVPixelBufferGetHeight(depthDataMap) == 0 {
-            print("0x0 empty depth data capture conditions failed to capture depth")
-            return
-        }
-        // Convert depth data to point cloud list of points
-        guard let pointCloud = convertDepthData(depthData: depthData) else {
-            print("failed to convert depth data")
-            return
-        }
-        // Prepare data for POST request
-        let jsonDic: [String: Any] = [
-            "image": imageData.base64EncodedString(),
-            "depth-accuracy": depthData.depthDataAccuracy.rawValue,
-            "depth-quality": depthData.depthDataQuality.rawValue,
-            "point-cloud": pointCloud
-        ]
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: jsonDic) else {
-            print("failed to serialize json data")
-            return
-        }
-        // Send capture data
-        Task {
-            print("Sending Capture...")
-            await sendCapture(data: jsonData)
-            print("Capture Sent!")
-        }
+//        addToPhotoStream?(photo)
+        self.capturedImage = photo
     }
 }
 
@@ -328,139 +324,3 @@ fileprivate extension UIScreen {
         }
     }
 }
-
-// MARK: sending capture
-//https://www.hackingwithswift.com/books/ios-swiftui/sending-and-receiving-orders-over-the-internet
-func sendCapture(data: Data) async {
-    guard let url = URL(string: "http://192.168.1.30:8080/capture") else { // Internal network server address (Change to desired request destination)
-        print("URL failed")
-        return
-    }
-    var request = URLRequest(url: url)
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.httpMethod = "POST"
-    
-    do {
-        let (data, urlRes) = try await URLSession.shared.upload(for: request, from: data)
-        print(String(data: data, encoding: .utf8) ?? "Couldn't convert data to string")
-        print(urlRes.url?.absoluteString ?? "couldn't find urlRes url string")
-    } catch {
-        print("Capture send request failed")
-    }
-}
-
-// MARK: depth map conversion and lens distortion correction
-//Convert CVPixelBuffer depth data to 2D float32 array and undistorts the points
-func convertDepthData(depthData: AVDepthData) -> [[Float32]]? {
-    
-    let depthMap = depthData.depthDataMap
-    
-    let depthWidth = CVPixelBufferGetWidth(depthMap)
-    let depthHeight = CVPixelBufferGetHeight(depthMap)
-    let depthSize = CGSize(width: depthWidth, height: depthHeight)
-    //768 X 576 (for photo), 768 X 432 (for the iFrame1280x720 format)
-    
-    //Compare the height and width with the camera intrisix reference dimensions object
-    
-    var convertedtDepthMap: [[Float32]] = []
-    
-    CVPixelBufferLockBaseAddress(depthMap, CVPixelBufferLockFlags(rawValue: 0))
-    let depthPointer = unsafeBitCast(CVPixelBufferGetBaseAddress(depthMap), to: UnsafeMutablePointer<Float32>.self)
-    
-    guard let intrinsicMatrix = depthData.cameraCalibrationData?.intrinsicMatrix else {
-        // Has to break I guess its in the stack overflow guys method so idk but i guess this fails sometimes
-        //So put up error message and manage failure from this method at UI level
-        print("intrinsicMatrix failed")
-        return nil
-    }
-
-    // Prepare for lens distortion correction
-    guard let lut = depthData.cameraCalibrationData?.lensDistortionLookupTable else {
-        //Camera calibration is optional so have to  handle potential nils????
-        print("lensDistortionLookupTable failed")
-        return nil
-    }
-    
-    guard let correctedCenter = depthData.cameraCalibrationData?.lensDistortionCenter else {
-        //Camera calibration is optional so have to  handle potential nils????
-        print("lensDistortionCenter failed")
-        return nil
-    }
-    
-    for row in 0 ..< depthHeight {
-        for col in 0 ..< depthWidth {
-            let currentDepth = depthPointer[row * depthWidth + col]
-            if currentDepth.isNaN || currentDepth.isZero {
-                print("invalid depth \(currentDepth)")
-                continue
-            }
-            
-            let currentPoint = CGPoint(x: col, y: row)
-            let correctedPoint: CGPoint = lensDistortionPoint(for: currentPoint, lookupTable: lut, distortionOpticalCenter: correctedCenter, imageSize: depthSize)
-            
-            let trueX: Float32 = (Float((correctedPoint.x)) - intrinsicMatrix[2][0]) * currentDepth / intrinsicMatrix[0][0]
-            if trueX.isInfinite || trueX.isNaN {
-                print("\(trueX): (\(correctedPoint.x) - \(intrinsicMatrix[2][0])) * \(currentDepth) / \(intrinsicMatrix[0][0])")
-                continue
-            }
-
-            let trueY: Float32 = (Float(correctedPoint.y) - intrinsicMatrix[2][1]) * currentDepth / intrinsicMatrix[1][1]
-            if trueY.isInfinite || trueY.isNaN {
-                print("\(trueY): (\(correctedPoint.y) - \(intrinsicMatrix[2][1])) * \(currentDepth) / \(intrinsicMatrix[1][1])")
-                continue
-            }
-            
-            let point = [trueX, trueY, currentDepth]
-            
-            convertedtDepthMap.append(point)
-        }
-    }
-    
-    return convertedtDepthMap
-}
-
-// From AVCameraCalibrationData.h
-func lensDistortionPoint(for point: CGPoint, lookupTable: Data, distortionOpticalCenter opticalCenter: CGPoint, imageSize: CGSize) -> CGPoint {
-    // The lookup table holds the relative radial magnification for n linearly spaced radii.
-    // The first position corresponds to radius = 0
-    // The last position corresponds to the largest radius found in the image.
-
-    // Determine the maximum radius.
-    let delta_ocx_max = Float(max(opticalCenter.x, imageSize.width  - opticalCenter.x))
-    let delta_ocy_max = Float(max(opticalCenter.y, imageSize.height - opticalCenter.y))
-    let r_max = sqrt(delta_ocx_max * delta_ocx_max + delta_ocy_max * delta_ocy_max)
-
-    // Determine the vector from the optical center to the given point.
-    let v_point_x = Float(point.x - opticalCenter.x)
-    let v_point_y = Float(point.y - opticalCenter.y)
-
-    // Determine the radius of the given point.
-    let r_point = sqrt(v_point_x * v_point_x + v_point_y * v_point_y)
-
-    // Look up the relative radial magnification to apply in the provided lookup table
-    let magnification: Float = lookupTable.withUnsafeBytes { (lookupTableValues: UnsafePointer<Float>) in
-        let lookupTableCount = lookupTable.count / MemoryLayout<Float>.size
-
-        if r_point < r_max {
-            // Linear interpolation
-            let val   = r_point * Float(lookupTableCount - 1) / r_max
-            let idx   = Int(val)
-            let frac  = val - Float(idx)
-
-            let mag_1 = lookupTableValues[idx]
-            let mag_2 = lookupTableValues[idx + 1]
-
-            return (1.0 - frac) * mag_1 + frac * mag_2
-        } else {
-            return lookupTableValues[lookupTableCount - 1]
-        }
-    }
-
-    // Apply radial magnification
-    let new_v_point_x = v_point_x + magnification * v_point_x
-    let new_v_point_y = v_point_y + magnification * v_point_y
-
-    // Construct output
-    return CGPoint(x: opticalCenter.x + CGFloat(new_v_point_x), y: opticalCenter.y + CGFloat(new_v_point_y))
-}
-
