@@ -17,11 +17,19 @@ struct CameraView: View {
     
     var body: some View {
         ViewfinderView(image: $model.viewfinderImage)
-            .overlay(alignment: .bottom) {
-                HStack {
+            .overlay() {
+                VStack {
+                    if model.viewfinderImage != nil {
+                        Text("Align your food in the target")
+                            .padding()
+                            .background(
+                                Capsule()
+                                    .fill(.ultraThinMaterial)
+                            )
+                    }
+                    
                     Spacer()
                     cameraButtonView()
-                    Spacer()
                 }
             }
             .task {

@@ -16,10 +16,16 @@ struct ViewfinderView: View {
     
     var body: some View {
         if let image = image {
-            image
-                .resizable()
-                .scaledToFill()
-                .ignoresSafeArea()
+            ZStack {
+                image
+                    .resizable()
+                    .scaledToFill()
+                    .ignoresSafeArea()
+                Image(systemName: "scope")
+                    .foregroundStyle(.red)
+                    .fontWeight(.bold)
+            }
+            
                 
         } else {
             ZStack {
@@ -40,5 +46,5 @@ struct ViewfinderView: View {
 
 
 #Preview {
-    ViewfinderView(image: .constant(nil))
+    ViewfinderView(image: .constant(Image(systemName: "photo")))
 }
